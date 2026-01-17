@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import ta
 
 # تكوين الصفحة
 st.set_page_config(
@@ -27,15 +25,14 @@ with st.sidebar:
     # اختيار الفترة الزمنية
     فترة = st.selectbox(
         "الفترة الزمنية",
-        options=["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"],
+        options=["1mo", "3mo", "6mo", "1y", "2y", "5y"],
         format_func=lambda x: {
             "1mo": "شهر واحد",
             "3mo": "3 أشهر",
             "6mo": "6 أشهر",
             "1y": "سنة واحدة",
             "2y": "سنتان",
-            "5y": "5 سنوات",
-            "max": "الحد الأقصى"
+            "5y": "5 سنوات"
         }.get(x),
         index=3
     )
@@ -43,340 +40,107 @@ with st.sidebar:
     # اختيار نوع التحليل
     نوع_التحليل = st.radio(
         "اختر نوع التحليل",
-        ["المتوسطات المتحركة", "مؤشر القوة النسبية (RSI)", "موجات إليوت", "عرض البيانات الأساسية"]
+        ["المتوسطات المتحركة", "عرض البيانات الأساسية"]
     )
     
-    # إعدادات خاصة بكل نوع تحليل
+    # إعدادات المتوسطات المتحركة
     if نوع_التحليل == "المتوسطات المتحركة":
         فترة_قصيرة = st.slider("فترة المتوسط المتحرك القصير", 5, 50, 20)
         فترة_طويلة = st.slider("فترة المتوسط المتحرك الطويل", 20, 200, 50)
-    
-    elif نوع_التحليل == "مؤشر القوة النسبية (RSI)":
-        فترة_rsi = st.slider("فترة مؤشر القوة النسبية", 5, 30, 14)
-        مستوى_تشبع_شراء = st.slider("مستوى تشبع الشراء", 60, 90, 70)
-        مستوى_تشبع_بيع = st.slider("مستوى تشبع البيع", 10, 40, 30)
     
     # زر تنفيذ التحليل
     تحليل = st.button("تحليل", use_container_width=True)
 
 # تحميل البيانات
-@st.cache_data(ttl=3600)  # تخزين مؤقت للبيانات لمدة ساعة
 def جلب_بيانات(رمز_السهم, فترة):
     try:
         بيانات = yf.download(رمز_السهم, period=فترة)
-        if بيانات.empty:
-            st.error(f"لا يمكن العثور على بيانات للرمز: {رمز_السهم}")
-            return None
         return بيانات
     except Exception as e:
         st.error(f"حدث خطأ أثناء تحميل البيانات: {e}")
-        return None
-
-# فئة التحليل الفني
-class محلل_فني:
-    def __init__(self, بيانات, رمز_السهم):
-        self.بيانات = بيانات
-        self.رمز_السهم = رمز_السهم
-    
-    def تحليل_المتوسطات_المتحركة(self, فترة_قصيرة=20, فترة_طويلة=50):
-        """تحليل تقاطع المتوسطات المتحركة"""
-        df = self.بيانات.copy()
-        df[f'MA_{فترة_قصيرة}'] = df['Close'].rolling(window=فترة_قصيرة).mean()
-        df[f'MA_{فترة_طويلة}'] = df['Close'].rolling(window=فترة_طويلة).mean()
-        
-        # إشارات الشراء والبيع
-        df['إشارة'] = 0
-        df['إشارة'] = np.where(df[f'MA_{فترة_قصيرة}'] > df[f'MA_{فترة_طويلة}'], 1, 0)
-        df['إشارة_تغيير'] = df['إشارة'].diff()
-        
-        # إشارة شراء = 1، إشارة بيع = -1
-        df['شراء'] = np.where(df['إشارة_تغيير'] == 1, df['Close'], np.nan)
-        df['بيع'] = np.where(df['إشارة_تغيير'] == -1, df['Close'], np.nan)
-        
-        # رسم بياني
-        fig = make_subplots(rows=1, cols=1)
-        
-        # إضافة سعر الإغلاق
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['Close'],
-            mode='lines',
-            name='سعر الإغلاق',
-            line=dict(color='black', width=2)
-        ))
-        
-        # إضافة المتوسطات المتحركة
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df[f'MA_{فترة_قصيرة}'],
-            mode='lines',
-            name=f'المتوسط المتحرك {فترة_قصيرة}',
-            line=dict(color='blue', width=1.5)
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df[f'MA_{فترة_طويلة}'],
-            mode='lines',
-            name=f'المتوسط المتحرك {فترة_طويلة}',
-            line=dict(color='red', width=1.5)
-        ))
-        
-        # إضافة إشارات الشراء والبيع
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['شراء'],
-            mode='markers',
-            name='إشارة شراء',
-            marker=dict(color='green', size=10, symbol='triangle-up')
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['بيع'],
-            mode='markers',
-            name='إشارة بيع',
-            marker=dict(color='red', size=10, symbol='triangle-down')
-        ))
-        
-        # تعديل التخطيط
-        fig.update_layout(
-            title=f'تحليل المتوسطات المتحركة لـ {self.رمز_السهم}',
-            xaxis_title='التاريخ',
-            yaxis_title='السعر',
-            template='plotly_white',
-            height=600
-        )
-        
-        return fig, df
-    
-    def تحليل_مؤشر_القوة_النسبية(self, فترة=14, مستوى_تشبع_شراء=70, مستوى_تشبع_بيع=30):
-        """تحليل مؤشر القوة النسبية (RSI)"""
-        df = self.بيانات.copy()
-        df['RSI'] = ta.momentum.RSIIndicator(df['Close'], window=فترة).rsi()
-        
-        # إشارات الشراء والبيع
-        df['شراء_RSI'] = np.where(df['RSI'] < مستوى_تشبع_بيع, df['Close'], np.nan)
-        df['بيع_RSI'] = np.where(df['RSI'] > مستوى_تشبع_شراء, df['Close'], np.nan)
-        
-        # رسم بياني
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                           vertical_spacing=0.1, row_heights=[0.7, 0.3])
-        
-        # إضافة سعر الإغلاق
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['Close'],
-            mode='lines',
-            name='سعر الإغلاق',
-            line=dict(color='black', width=2)
-        ), row=1, col=1)
-        
-        # إضافة إشارات الشراء والبيع
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['شراء_RSI'],
-            mode='markers',
-            name='إشارة شراء (RSI)',
-            marker=dict(color='green', size=10, symbol='triangle-up')
-        ), row=1, col=1)
-        
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['بيع_RSI'],
-            mode='markers',
-            name='إشارة بيع (RSI)',
-            marker=dict(color='red', size=10, symbol='triangle-down')
-        ), row=1, col=1)
-        
-        # إضافة مؤشر RSI
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['RSI'],
-            mode='lines',
-            name='مؤشر القوة النسبية',
-            line=dict(color='purple', width=1.5)
-        ), row=2, col=1)
-        
-        # إضافة خطوط مستويات تشبع الشراء والبيع
-        fig.add_hline(y=مستوى_تشبع_شراء, line_dash="dash", line_color="red", row=2, col=1)
-        fig.add_hline(y=مستوى_تشبع_بيع, line_dash="dash", line_color="green", row=2, col=1)
-        
-        # تعديل التخطيط
-        fig.update_layout(
-            title=f'تحليل مؤشر القوة النسبية لـ {self.رمز_السهم}',
-            xaxis_title='التاريخ',
-            template='plotly_white',
-            height=700
-        )
-        
-        fig.update_yaxes(title_text="السعر", row=1, col=1)
-        fig.update_yaxes(title_text="RSI", row=2, col=1)
-        
-        return fig, df
-    
-    def تحليل_موجات_إليوت(self):
-        """تحليل موجات إليوت (نموذج مبسط)"""
-        df = self.بيانات.copy()
-        
-        # تحديد النقاط المحورية (مبسط)
-        window_size = 10
-        df['min_local'] = df['Close'].rolling(window=window_size, center=True).min()
-        df['max_local'] = df['Close'].rolling(window=window_size, center=True).max()
-        
-        pivots = []
-        dates = []
-        prices = []
-        types = []  # 'min' أو 'max'
-        
-        # تحديد النقاط المحورية البسيطة
-        for i in range(window_size, len(df)-window_size):
-            if df['Close'].iloc[i] == df['min_local'].iloc[i]:
-                if len(types) == 0 or types[-1] == 'max':
-                    pivots.append(i)
-                    dates.append(df.index[i])
-                    prices.append(df['Close'].iloc[i])
-                    types.append('min')
-            elif df['Close'].iloc[i] == df['max_local'].iloc[i]:
-                if len(types) == 0 or types[-1] == 'min':
-                    pivots.append(i)
-                    dates.append(df.index[i])
-                    prices.append(df['Close'].iloc[i])
-                    types.append('max')
-            
-            if len(pivots) >= 9:  # نحتاج إلى 9 نقاط للموجات الخمس (5 موجات صاعدة + 3 موجات هابطة + 1)
-                break
-        
-        # رسم بياني
-        fig = go.Figure()
-        
-        # إضافة سعر الإغلاق
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['Close'],
-            mode='lines',
-            name='سعر الإغلاق',
-            line=dict(color='black', width=2)
-        ))
-        
-        # إضافة النقاط المحورية
-        if len(dates) >= 5:
-            wave_labels = ['1', '2', '3', '4', '5', 'A', 'B', 'C']
-            fig.add_trace(go.Scatter(
-                x=dates[:min(len(dates), 8)],
-                y=prices[:min(len(prices), 8)],
-                mode='markers+lines+text',
-                name='موجات إليوت',
-                marker=dict(size=10, color='blue'),
-                text=wave_labels[:min(len(dates), 8)],
-                textposition="top center"
-            ))
-        
-        # تعديل التخطيط
-        fig.update_layout(
-            title=f'تحليل موجات إليوت لـ {self.رمز_السهم} (نموذج مبسط)',
-            xaxis_title='التاريخ',
-            yaxis_title='السعر',
-            template='plotly_white',
-            height=600
-        )
-        
-        return fig, df
+        return pd.DataFrame()
 
 # تنفيذ التحليل عند النقر على زر التحليل
-if تحليل or 'بيانات' not in st.session_state:
+if تحليل:
     with st.spinner('جاري تحميل البيانات...'):
         بيانات = جلب_بيانات(رمز_السهم, فترة)
-        if بيانات is not None:
-            st.session_state['بيانات'] = بيانات
-            st.session_state['رمز_السهم'] = رمز_السهم
-
-# عرض التحليل إذا كانت البيانات متاحة
-if 'بيانات' in st.session_state:
-    بيانات = st.session_state['بيانات']
-    رمز_السهم = st.session_state['رمز_السهم']
-    
-    # التحقق من وجود بيانات كافية
-    if بيانات is not None and not بيانات.empty and len(بيانات) > 1:
-        # إنشاء كائن التحليل
-        محلل = محلل_فني(بيانات, رمز_السهم)
+        
+    if not بيانات.empty:
+        st.success(f"تم تحميل بيانات {رمز_السهم} بنجاح!")
         
         # عرض معلومات أساسية عن السهم
-        try:
-            col1, col2, col3, col4 = st.columns(4)
+        if len(بيانات) > 1:
+            col1, col2 = st.columns(2)
             with col1:
                 st.metric("آخر سعر إغلاق", f"{بيانات['Close'].iloc[-1]:.2f}")
             with col2:
                 تغيير = بيانات['Close'].iloc[-1] - بيانات['Close'].iloc[-2]
                 نسبة_التغيير = (تغيير / بيانات['Close'].iloc[-2]) * 100
                 st.metric("التغير اليومي", f"{تغيير:.2f}", f"{نسبة_التغيير:.2f}%")
-            with col3:
-                st.metric("أعلى سعر", f"{بيانات['High'].iloc[-1]:.2f}")
-            with col4:
-                st.metric("أدنى سعر", f"{بيانات['Low'].iloc[-1]:.2f}")
-        except Exception as e:
-            st.warning(f"لا يمكن عرض بعض المعلومات الأساسية: {e}")
         
         # عرض التحليل المطلوب
-        try:
-            if نوع_التحليل == "المتوسطات المتحركة":
-                رسم, df_result = محلل.تحليل_المتوسطات_المتحركة(فترة_قصيرة, فترة_طويلة)
-                st.plotly_chart(رسم, use_container_width=True)
-                
-                # عرض التفسير
-                with st.expander("تفسير التحليل"):
-                    st.markdown("""
-                    ### تفسير تحليل المتوسطات المتحركة
-                    
-                    - **المثلث الأخضر (▲)**: إشارة شراء - عندما يتقاطع المتوسط القصير فوق المتوسط الطويل
-                    - **المثلث الأحمر (▼)**: إشارة بيع - عندما يتقاطع المتوسط القصير تحت المتوسط الطويل
-                    
-                    **نصائح للتداول**:
-                    - اتجاه صاعد: عندما يكون المتوسط القصير فوق المتوسط الطويل
-                    - اتجاه هابط: عندما يكون المتوسط القصير تحت المتوسط الطويل
-                    """)
+        if نوع_التحليل == "المتوسطات المتحركة":
+            # حساب المتوسطات المتحركة
+            بيانات[f'MA_{فترة_قصيرة}'] = بيانات['Close'].rolling(window=فترة_قصيرة).mean()
+            بيانات[f'MA_{فترة_طويلة}'] = بيانات['Close'].rolling(window=فترة_طويلة).mean()
             
-            elif نوع_التحليل == "مؤشر القوة النسبية (RSI)":
-                رسم, df_result = محلل.تحليل_مؤشر_القوة_النسبية(فترة_rsi, مستوى_تشبع_شراء, مستوى_تشبع_بيع)
-                st.plotly_chart(رسم, use_container_width=True)
-                
-                # عرض التفسير
-                with st.expander("تفسير التحليل"):
-                    st.markdown(f"""
-                    ### تفسير تحليل مؤشر القوة النسبية (RSI)
-                    
-                    - **المثلث الأخضر (▲)**: إشارة شراء محتملة - عندما ينخفض مؤشر RSI تحت مستوى تشبع البيع ({مستوى_تشبع_بيع})
-                    - **المثلث الأحمر (▼)**: إشارة بيع محتملة - عندما يرتفع مؤشر RSI فوق مستوى تشبع الشراء ({مستوى_تشبع_شراء})
-                    
-                    **نصائح للتداول**:
-                    - قيم RSI فوق {مستوى_تشبع_شراء}: السهم في حالة تشبع شراء (قد يكون مبالغًا في قيمته)
-                    - قيم RSI تحت {مستوى_تشبع_بيع}: السهم في حالة تشبع بيع (قد يكون مقيمًا بأقل من قيمته)
-                    - قيم RSI بين {مستوى_تشبع_بيع} و {مستوى_تشبع_شراء}: السهم في نطاق متوازن
-                    """)
+            # رسم بياني
+            fig = go.Figure()
             
-            elif نوع_التحليل == "موجات إليوت":
-                رسم, df_result = محلل.تحليل_موجات_إليوت()
-                st.plotly_chart(رسم, use_container_width=True)
-                
-                # عرض التفسير
-                with st.expander("تفسير التحليل"):
-                    st.markdown("""
-                    ### تفسير تحليل موجات إليوت
-                    
-                    نظرية موجات إليوت تقترح أن حركة السوق تتبع نمطًا من 5 موجات في اتجاه الاتجاه الرئيسي، تليها 3 موجات تصحيحية:
-                    
-                    - **الموجات 1-5**: الموجات الدافعة في اتجاه الاتجاه الرئيسي
-                    - **الموجات A-C**: الموجات التصحيحية المعاكسة للاتجاه الرئيسي
-                    
-                    **ملاحظة**: هذا تنفيذ مبسط لموجات إليوت. التحليل الدقيق يتطلب خبرة ومعرفة أعمق بقواعد وأنماط موجات إليوت.
-                    """)
+            # إضافة سعر الإغلاق
+            fig.add_trace(go.Scatter(
+                x=بيانات.index,
+                y=بيانات['Close'],
+                mode='lines',
+                name='سعر الإغلاق',
+                line=dict(color='black', width=2)
+            ))
             
-            elif نوع_التحليل == "عرض البيانات الأساسية":
-                st.subheader("بيانات السهم")
-                st.dataframe(بيانات.tail(20))
-        except Exception as e:
-            st.error(f"حدث خطأ أثناء تنفيذ التحليل: {e}")
+            # إضافة المتوسطات المتحركة
+            fig.add_trace(go.Scatter(
+                x=بيانات.index,
+                y=بيانات[f'MA_{فترة_قصيرة}'],
+                mode='lines',
+                name=f'المتوسط المتحرك {فترة_قصيرة}',
+                line=dict(color='blue', width=1.5)
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=بيانات.index,
+                y=بيانات[f'MA_{فترة_طويلة}'],
+                mode='lines',
+                name=f'المتوسط المتحرك {فترة_طويلة}',
+                line=dict(color='red', width=1.5)
+            ))
+            
+            # تعديل التخطيط
+            fig.update_layout(
+                title=f'تحليل المتوسطات المتحركة لـ {رمز_السهم}',
+                xaxis_title='التاريخ',
+                yaxis_title='السعر',
+                template='plotly_white',
+                height=600
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # عرض التفسير
+            with st.expander("تفسير التحليل"):
+                st.markdown("""
+                ### تفسير تحليل المتوسطات المتحركة
+                
+                - عندما يتقاطع المتوسط القصير فوق المتوسط الطويل: إشارة شراء محتملة
+                - عندما يتقاطع المتوسط القصير تحت المتوسط الطويل: إشارة بيع محتملة
+                
+                **نصائح للتداول**:
+                - اتجاه صاعد: عندما يكون المتوسط القصير فوق المتوسط الطويل
+                - اتجاه هابط: عندما يكون المتوسط القصير تحت المتوسط الطويل
+                """)
+        
+        elif نوع_التحليل == "عرض البيانات الأساسية":
+            st.subheader("بيانات السهم")
+            st.dataframe(بيانات.tail(20))
     else:
-        st.warning(f"لم يتم العثور على بيانات كافية للرمز {رمز_السهم}. يرجى التحقق من رمز السهم والمحاولة مرة أخرى.")
+        st.warning(f"لم يتم العثور على بيانات للرمز {رمز_السهم}. يرجى التحقق من رمز السهم والمحاولة مرة أخرى.")
 else:
     st.info("أدخل رمز السهم واضغط على زر 'تحليل' للبدء.")
